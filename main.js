@@ -1,6 +1,6 @@
 const Synthia = {};
 Synthia.entityId = 0;
-
+// Prerequisites 
 Synthia.Vector = class {
     constructor(x = 0, y = 0) {
         this.x = x;
@@ -76,7 +76,7 @@ Synthia.Vector = class {
     
     elastic(target, time) {
         const stretch  = 0.1; // Controls how far things jiggle
-        const firmness =  40; // Controls how long things jiggle for
+        const firmness =  10; // Controls how long things jiggle for
         const elasticTime = Math.pow(2, -firmness * time) * Math.sin((time - stretch / 4) * (2 * Math.PI) / stretch) + 1;
         return new Synthia.Vector(
             this.x + (target.x - this.x) * elasticTime,
@@ -108,6 +108,7 @@ Synthia.Shape = {
         }
     }
 };
+// Input handling
 Synthia.Input = {
     Mouse: {
         Position: new Synthia.Vector(),
@@ -115,6 +116,7 @@ Synthia.Input = {
     },
     Keyboard: {}
 };
+// Visuals
 Synthia.Display = class {
     constructor(canvasId) {
         this.Canvas  = document.getElementById(canvasId);
@@ -226,34 +228,7 @@ Synthia.Display = class {
         ctx.fillRect(0, 0, this.Canvas.width, this.Canvas.width)
     }
 };
-Synthia.Renderer = {
-    Vector: function (display, entities) {
-        for (let entity of entities.values()) {
-            if (entity.hasComponent(Synthia.ComponentTypes.VECTOR_SPRITE)) {
-                let x = entity.Position.x
-                let y = entity.Position.y
-                let shape = entity.Shape
-                switch(shape.name) {
-                    case Synthia.Shapes.CIRCLE:
-                        display.strokeCircle(x, y, shape.radius, shape.color);
-                        break;
-                    case Synthia.Shapes.SQUARE:
-                        display.strokeRect(
-                            x - (shape.width/2),
-                            y - (shape.width/2),
-                            shape.width, 
-                            shape.width, 
-                            shape.color
-                        );
-                        break;
-                    default:
-                        console.warn('Unknown shape: ', shape.name);
-                        break;
-                }
-            }
-        }
-    }
-}
+// Core
 Synthia.Engine = class {
     constructor(canvasId) {
         // Input handling
@@ -324,9 +299,16 @@ Synthia.ComponentTypes = {
     FOLLOW_TARGET: Symbol("Follow Target"),
     VECTOR_SPRITE: Symbol("Vector Sprite"),
     TWEENABLE:     Symbol("Tweenable"),
-    CAMERA:        Symbol("Camera")
+    CAMERA:        Symbol("Camera"),
+    POSITION:      Symbol("Position")
 };
 Synthia.Components = {
+    Position: new Synthia.Component(
+        Synthia.ComponentTypes.POSITION,
+        {
+            Position: new Synthia.Vector(100, 100)
+        }
+    ),
     FollowTarget: new Synthia.Component(
         Synthia.ComponentTypes.FOLLOW_TARGET,
         { 
@@ -338,25 +320,22 @@ Synthia.Components = {
     VectorSprite: new Synthia.Component(
         Synthia.ComponentTypes.VECTOR_SPRITE,
         {
-            Position: new Synthia.Vector(100, 100),
             Shape:    new Synthia.Shape.Square(20)
         }
     ),
     Tweenable: new Synthia.Component(
         Synthia.ComponentTypes.TWEENABLE,
         {
-            Position: new Synthia.Vector(100, 100),
-
             TweenOrigin: new Synthia.Vector(100, 100),
-            TweenTarget: new Synthia.Vector(500, 100),
+            TweenTarget: new Synthia.Vector(500, 300),
             // Timer in frames
             tweenFrame:      0,
             tweenDuration: 100,
 
             tweenStyle: 'elastic',
 
-            setNewTweenTarget: function (position, time) {
-                this.TweenTarget   = position;
+            setNewTweenTarget: function (target, time) {
+                this.TweenTarget   = target;
                 this.tweenDuration = time;
             }
         }
@@ -364,8 +343,6 @@ Synthia.Components = {
     Camera: new Synthia.Component(
         Synthia.ComponentTypes.CAMERA,
         {
-            Position: new Synthia.Vector(100, 100),
-
             worldToCameraCoordinates(vector) {
                 return vector.subtract(this.Position)
             }
@@ -396,7 +373,10 @@ Synthia.System = class {
 Synthia.Systems = {
     FollowTarget: new Synthia.System(
         "Follow Target",
-        [Synthia.ComponentTypes.FOLLOW_TARGET],
+        [
+            Synthia.ComponentTypes.FOLLOW_TARGET,
+            Synthia.ComponentTypes.POSITION
+        ],
         function (entity, deltaTime) {
             let target   = entity.followTarget.Position
             let position = entity.Position
@@ -410,7 +390,10 @@ Synthia.Systems = {
     ),
     Tweening: new Synthia.System(
         "Tweening",
-        [Synthia.ComponentTypes.TWEENABLE],
+        [
+            Synthia.ComponentTypes.TWEENABLE,
+            Synthia.ComponentTypes.POSITION
+        ],
         function (entity, deltaTime) {
             if (entity.tweenDuration > 0) {
                 if (entity.tweenFrame < entity.tweenDuration) {
@@ -433,7 +416,52 @@ Synthia.Systems = {
         }
     )
 
-}
+};
+Synthia.Renderer = {
+    Vector: function (display, entities) {
+        for (let entity of entities.values()) {
+            let camera = null;
+            for (let entity of entities.values()) {
+                if (entity.hasComponent(Synthia.ComponentTypes.CAMERA)) {
+                    camera = entity;
+                    break;
+                }
+            }
+            if (!camera) {
+                camera = new Synthia.Entity()
+                camera.addComponent(Synthia.Components.Camera)
+                camera.addComponent(Synthia.Components.Position)
+                camera.Position.x = display.Canvas.width  / 2
+                camera.Position.y = display.Canvas.height / 2
+            }
+            if (entity.hasComponent(Synthia.ComponentTypes.VECTOR_SPRITE)) {
+                let worldPosition = entity.Position;
+                let cameraPosition = camera.worldToCameraCoordinates(worldPosition)
+                let x = cameraPosition.x + display.Canvas.width / 2
+                let y = cameraPosition.y + display.Canvas.height / 2
+                let shape = entity.Shape
+                switch(shape.name) {
+                    case Synthia.Shapes.CIRCLE:
+                        display.strokeCircle(x, y, shape.radius, shape.color);
+                        break;
+                    case Synthia.Shapes.SQUARE:
+                        display.strokeRect(
+                            x - (shape.width/2),
+                            y - (shape.width/2),
+                            shape.width, 
+                            shape.width, 
+                            shape.color
+                        );
+                        break;
+                    default:
+                        console.warn('Unknown shape: ', shape.name);
+                        break;
+                }
+            }
+        }
+    }
+};
+// Game Scenes
 Synthia.Scene = class {
     constructor(name, customMethods = {}) {
         this.name = name || "Default Scene";
