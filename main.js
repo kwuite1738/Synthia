@@ -325,13 +325,13 @@ Synthia.ComponentTypes = {
     VECTOR_SPRITE: Symbol("Vector Sprite"),
     TWEENABLE:     Symbol("Tweenable"),
     CAMERA:        Symbol("Camera")
-}
+};
 Synthia.Components = {
     FollowTarget: new Synthia.Component(
         Synthia.ComponentTypes.FOLLOW_TARGET,
         { 
             followMaxSpeed: 5,
-            followTarget: Synthia.Input.Mouse.Position,
+            followTarget: Synthia.Input.Mouse,
             followDistance: 20
         }
     ),
@@ -371,7 +371,7 @@ Synthia.Components = {
             }
         }
     )
-}
+};
 Synthia.System = class {
     constructor(name, componentNames, logic) {
         this.name = name;
@@ -398,7 +398,7 @@ Synthia.Systems = {
         "Follow Target",
         [Synthia.ComponentTypes.FOLLOW_TARGET],
         function (entity, deltaTime) {
-            let target   = entity.followTarget
+            let target   = entity.followTarget.Position
             let position = entity.Position
             let distance = position.calculateDistance(target)
             if (distance > entity.followDistance) {
