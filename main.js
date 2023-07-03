@@ -256,8 +256,7 @@ Synthia.Engine = class {
         this.currentTime = timestamp;
         this.Display.clear()
         if (this.Scene) {
-            this.Scene.update(deltaTime);
-            this.Scene.render(this.Display);
+            this.Scene.update(deltaTime, this.Display);
         }
         // Keep going
         requestAnimationFrame(this.gameLoop);
@@ -362,10 +361,10 @@ Synthia.System = class {
     applicableTo(entity) {
         return this.componentNames.every(name => entity.hasComponent(name));
     }
-    update(entities, deltaTime) {
+    update(entities, deltaTime, display) {
         for (let entity of entities.values()) {
             if (this.applicableTo(entity)) {
-                this.logic(entity, deltaTime)
+                this.logic(entity, deltaTime, display)
             }
         }
     }
@@ -377,7 +376,7 @@ Synthia.Systems = {
             Synthia.ComponentTypes.FOLLOW_TARGET,
             Synthia.ComponentTypes.POSITION
         ],
-        function (entity, deltaTime) {
+        function (entity, deltaTime, display) {
             let target   = entity.followTarget.Position
             let position = entity.Position
             let distance = position.calculateDistance(target)
@@ -394,7 +393,7 @@ Synthia.Systems = {
             Synthia.ComponentTypes.TWEENABLE,
             Synthia.ComponentTypes.POSITION
         ],
-        function (entity, deltaTime) {
+        function (entity, deltaTime, display) {
             if (entity.tweenDuration > 0) {
                 if (entity.tweenFrame < entity.tweenDuration) {
                     entity.Position = entity.TweenOrigin[entity.tweenStyle](
@@ -414,52 +413,41 @@ Synthia.Systems = {
                 }
             }
         }
-    )
-
-};
-Synthia.Renderer = {
-    Vector: function (display, entities) {
-        for (let entity of entities.values()) {
-            let camera = null;
-            for (let entity of entities.values()) {
-                if (entity.hasComponent(Synthia.ComponentTypes.CAMERA)) {
-                    camera = entity;
+    ),
+    // Requires a this.Camera object to work.
+    BasicRenderer: new Synthia.System(
+        "Basic Renderer",
+        [
+            Synthia.ComponentTypes.VECTOR_SPRITE
+        ],
+        function (entity, deltaTime, display) {
+            let camera = this.Camera;
+            if (!camera) {return}
+            let worldPosition = entity.Position;
+            let cameraPosition = camera.worldToCameraCoordinates(worldPosition)
+            let x = cameraPosition.x + display.Canvas.width / 2
+            let y = cameraPosition.y + display.Canvas.height / 2
+            let shape = entity.Shape
+            switch(shape.name) {
+                case Synthia.Shapes.CIRCLE:
+                    display.strokeCircle(x, y, shape.radius, shape.color);
                     break;
-                }
-            }
-            if (!camera) {
-                camera = new Synthia.Entity()
-                camera.addComponent(Synthia.Components.Camera)
-                camera.addComponent(Synthia.Components.Position)
-                camera.Position.x = display.Canvas.width  / 2
-                camera.Position.y = display.Canvas.height / 2
-            }
-            if (entity.hasComponent(Synthia.ComponentTypes.VECTOR_SPRITE)) {
-                let worldPosition = entity.Position;
-                let cameraPosition = camera.worldToCameraCoordinates(worldPosition)
-                let x = cameraPosition.x + display.Canvas.width / 2
-                let y = cameraPosition.y + display.Canvas.height / 2
-                let shape = entity.Shape
-                switch(shape.name) {
-                    case Synthia.Shapes.CIRCLE:
-                        display.strokeCircle(x, y, shape.radius, shape.color);
-                        break;
-                    case Synthia.Shapes.SQUARE:
-                        display.strokeRect(
-                            x - (shape.width/2),
-                            y - (shape.width/2),
-                            shape.width, 
-                            shape.width, 
-                            shape.color
-                        );
-                        break;
-                    default:
-                        console.warn('Unknown shape: ', shape.name);
-                        break;
-                }
+                case Synthia.Shapes.SQUARE:
+                    display.strokeRect(
+                        x - (shape.width/2),
+                        y - (shape.width/2),
+                        shape.width, 
+                        shape.width, 
+                        shape.color
+                    );
+                    break;
+                default:
+                    console.warn('Unknown shape: ', shape.name);
+                    break;
             }
         }
-    }
+    )
+
 };
 // Game Scenes
 Synthia.Scene = class {
@@ -468,11 +456,9 @@ Synthia.Scene = class {
 
         this.Entities  = new Map();
         this.Systems   = [];
-        this.Renderers = [];
 
         this.enter  = customMethods.enter  || this.enter;
         this.update = customMethods.update || this.update;
-        this.render = customMethods.render || this.render;
         this.exit   = customMethods.exit   || this.exit;
     }
     // Entity handling
@@ -502,15 +488,10 @@ Synthia.Scene = class {
             console.log(data);
         }
     }
-    update(deltaTime) {
+    update(deltaTime, display) {
         this.time = deltaTime;
         for (let system of this.Systems) {
-            system.update(this.Entities, deltaTime)
-        }
-    }
-    render(display) {
-        for (let renderer of this.Renderers) {
-            renderer(display, this.Entities)
+            system.update(this.Entities, deltaTime, display)
         }
     }
     exit() {
